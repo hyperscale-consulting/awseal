@@ -20,7 +20,7 @@ jobs:
           swift --version
           swift build -c release --arch arm64
           swift build -c release --arch x86_64
-          mkdir -p .build/univeral/release
+          mkdir -p .build/universal/release
           lipo -create -output .build/universal/release/awseal \
             .build/arm64-apple-macosx/release/awseal \
             .build/x86_64-apple-macosx/release/awseal
