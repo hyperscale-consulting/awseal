@@ -5,6 +5,7 @@ A secure AWS credential manager that protects your AWS SSO credentials using App
 ## 🚨 The Problem
 
 Traditional AWS credential storage methods are vulnerable to credential theft:
+
 - Credentials stored in plain text files can be read by any process
 - Environment variables can be accessed by child processes
 - Malicious code can easily exfiltrate your AWS access keys or cached AWS SSO credentials
@@ -42,6 +43,7 @@ awseal login
 ```
 
 This will:
+
 - Open your browser for AWS SSO authentication
 - Store your SSO credentials encrypted under the Secure Enclave
 - Require Touch ID/Face ID to access the stored credentials
@@ -111,6 +113,7 @@ aws ec2 describe-instances
 ### Threat Model
 
 `awseal` protects against:
+
 - ✅ **Credential Theft**: Malicious code cannot read encrypted credentials
 - ✅ **Key Extraction**: Private keys never leave the Secure Enclave
 - ✅ **Unauthorized Access**: User presence required to access the Secure Enclave key
@@ -131,14 +134,6 @@ aws ec2 describe-instances
    - Credentials are never stored in plain text
    - Access requires physical user presence
    - Malicious code cannot bypass authentication
-
-## 🔍 Troubleshooting
-
-### Common Issues
-
-## 🤝 Contributing
-
-Contributions are welcome! Please read our contributing guidelines and ensure all code follows our security standards.
 
 ## 📄 License
 
