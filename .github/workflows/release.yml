@@ -30,4 +30,4 @@ jobs:
         uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
         with:
           files: |
-            .build/universal/release/awseal-${GITHUB_REF_NAME}.tar.gz
+            .build/universal/release/awseal-${{ github.ref_name }}.tar.gz
