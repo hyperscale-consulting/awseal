@@ -1,0 +1,33 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  id-token: write
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - run: sudo xcrun xcode-select -s /Applications/Xcode_16.4.app
+      - run: |
+          swift --version
+          swift build -c release --arch arm64
+          swift build -c release --arch x86_64
+          mkdir -p .build/univeral/release
+          lipo -create -output .build/universal/release/awseal \
+            .build/arm64-apple-macosx/release/awseal \
+            .build/x86_64-apple-macosx/release/awseal
+          cd .build/universal/release
+          tar -czf awseal-${GITHUB_REF_NAME}.tar.gz awseal
+      - name: Create github release
+        uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
+        with:
+          files: |
+            .build/universal/release/awseal-${GITHUB_REF_NAME}.tar.gz
