@@ -36,39 +36,7 @@ brew install awseal
 
 ## 📖 Quick Start
 
-### 1. Login to AWS SSO
-
-```bash
-awseal login
-```
-
-This will:
-
-- Open your browser for AWS SSO authentication
-- Store your SSO credentials encrypted under the Secure Enclave
-- Require Touch ID/Face ID to access the stored credentials
-
-### 2. Configure AWS CLI
-
-Add to your `~/.aws/config`:
-
-```ini
-[default]
-credential_process = awseal fetch-role-creds
-
-[my-profile]
-credential_process = awseal fetch-role-creds --profile my-profile
-```
-
-### 3. Use AWS CLI Normally
-
-```bash
-# Credentials are automatically fetched and rotated
-aws s3 ls
-aws ec2 describe-instances
-```
-
-## ⚙️ Configuration
+### 1. Configure awseal
 
 `awseal` is configured via `~/.awseal/config.json`:
 
@@ -91,7 +59,9 @@ aws ec2 describe-instances
 }
 ```
 
-### Configuration Options
+The top level attributes are the profiles you can reference through
+`--profile`. The default profile is used if this option is omitted. The
+available configuration options for each profile are:
 
 - **ssoStartUrl**: Your organization's AWS SSO start URL
 - **ssoRegion**: AWS region where SSO is configured
@@ -99,16 +69,54 @@ aws ec2 describe-instances
 - **accountId**: Your AWS account ID
 - **roleName**: The role you want to assume
 
+### 2. Login to AWS SSO
+
+```bash
+awseal login
+```
+
+This will:
+
+- Open your browser for AWS SSO authentication
+- Store your SSO credentials encrypted under the Secure Enclave
+- Require Touch ID/Face ID to access the stored credentials
+
+### 3. Configure AWS CLI
+
+Configure the AWS CLI to use `awseal` as an external credential provider by
+setting `awseal` as the `credential_process` for each profile you want to use
+it with in `~/.aws/config`:
+
+```ini
+[default]
+credential_process = awseal fetch-role-creds
+
+[my-profile]
+credential_process = awseal fetch-role-creds --profile my-profile
+```
+
+### 4. Use AWS CLI Normally
+
+```bash
+# Credentials are automatically fetched and rotated
+aws s3 ls
+aws ec2 describe-instances
+```
+
 ## 🔒 Security Architecture
 
 ### Secure Enclave Integration
 
 `awseal` uses Apple's Secure Enclave to generate and store cryptographic keys:
 
-1. **Key Generation**: A P-256 key pair is generated in the Secure Enclave during first use
+1. **Key Generation**: A P-256 key pair is generated in the Secure Enclave
+   during first use
 2. **Access Control**: Keys are protected with `userPresence` requirement
-3. **Credential Encryption**: AWS SSO credentials are encrypted using HPKE (Hybrid Public Key Encryption) with the P256-SHA256-AES-GCM-256 ciphersuite, because the Secure Enclave only supports NIST P-256 elliptic curve keys
-4. **Biometric Authentication**: Touch ID/Face ID required to access the encryption key
+3. **Credential Encryption**: AWS SSO credentials are encrypted using HPKE
+   (Hybrid Public Key Encryption) with the P256-SHA256-AES-GCM-256 ciphersuite,
+because the Secure Enclave only supports NIST P-256 elliptic curve keys
+4. **Biometric Authentication**: Touch ID/Face ID required to access the
+   encryption key
 
 ### Threat Model
 
@@ -116,7 +124,8 @@ aws ec2 describe-instances
 
 - ✅ **Credential Theft**: Malicious code cannot read encrypted credentials
 - ✅ **Key Extraction**: Private keys never leave the Secure Enclave
-- ✅ **Unauthorized Access**: User presence required to access the Secure Enclave key
+- ✅ **Unauthorized Access**: User presence required to access the Secure
+Enclave key
 
 ## 🏗️ How It Works
 
@@ -137,7 +146,8 @@ aws ec2 describe-instances
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE)
+file for details.
 
 ## 🙏 Acknowledgments
 
@@ -147,7 +157,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🔗 Related Projects
 
-- [Secretive](https://github.com/maxgoedjen/secretive) - Secure SSH key management using Secure Enclave
+- [Secretive](https://github.com/maxgoedjen/secretive) - Secure SSH key
+management using Secure Enclave
 - [AWS CLI](https://aws.amazon.com/cli/) - Command line interface for AWS
 - [AWS SSO](https://aws.amazon.com/single-sign-on/) - AWS Single Sign-On service
 
