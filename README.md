@@ -30,7 +30,7 @@ Traditional AWS credential storage methods are vulnerable to credential theft:
 ## 🚀 Installation
 
 ```bash
-# Install via Homebrew (tap coming soon)
+brew tap hyperscale-consulting/hyperscale
 brew install awseal
 ```
 
