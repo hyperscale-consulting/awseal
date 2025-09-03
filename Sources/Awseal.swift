@@ -366,11 +366,15 @@ func fetchRoleCreds(profile: String, oidc: SSOOIDCClient, sso: SSOClient, region
     }
 
     let input = GetRoleCredentialsInput(accessToken: accessToken, accountId: accountId, roleName: roleName)
-    let response = try await sso.getRoleCredentials(input: input)
-    guard let roleCreds = response.roleCredentials else {
+    do {
+        let response = try await sso.getRoleCredentials(input: input)
+        guard let roleCreds = response.roleCredentials else {
+            throw AwsealError.notLoggedIn
+        }
+        return roleCreds
+    } catch is UnauthorizedException {
         throw AwsealError.notLoggedIn
     }
-    return roleCreds
 }
 
 func formatExpiration(_ expiration: Int) -> String {
