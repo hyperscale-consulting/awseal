@@ -1,6 +1,10 @@
 # awseal 🔐
 
-A secure AWS credential manager that protects your AWS SSO credentials using Apple's Secure Enclave. Inspired by [Secretive](https://github.com/maxgoedjen/secretive), `awseal` ensures that your AWS credentials can never be stolen by malicious code without your explicit permission.
+A secure AWS credential manager that protects your AWS credentials using
+Apple's Secure Enclave. Inspired by
+[Secretive](https://github.com/maxgoedjen/secretive), `awseal` protects you AWS
+credentials from malicious code by ensuring they can only be accessed with your
+explicit permission.
 
 ## 🚨 The Problem
 
@@ -12,17 +16,23 @@ Traditional AWS credential storage methods are vulnerable to credential theft:
 
 ## 🛡️ The Solution
 
-`awseal` leverages Apple's Secure Enclave to provide hardware-backed security for your AWS credentials:
+`awseal` leverages Apple's Secure Enclave to provide hardware-backed security
+for your AWS credentials:
 
-- **Secure Storage**: AWS SSO credentials are encrypted using keys stored in the Secure Enclave
-- **User Presence Required**: Access to credentials requires biometric authentication (Touch ID, Face ID) or device passcode
-- **Malware Protection**: Even if malicious code runs on your system, it cannot access your AWS credentials without your physical presence
+- **Secure Storage**: AWS credentials are encrypted using keys stored in the
+Secure Enclave
+- **User Presence Required**: Access to credentials requires biometric
+authentication (Touch ID, Face ID) or device passcode
+- **Malware Protection**: Even if malicious code runs on your system, it cannot
+access your AWS credentials without your physical presence
 - **Seamless Integration**: Works transparently with the AWS CLI via `credential_process`
 
 ## ✨ Features
 
-- **Secure Authentication**: Login once with `awseal login` and your credentials are safely stored
-- **Automatic Credential Rotation**: Fresh role credentials are minted on-demand when needed
+- **Secure Authentication**: Login once with `awseal login` and your
+credentials are safely stored
+- **Automatic Credential Rotation**: Fresh role credentials are minted
+on-demand when needed
 - **Multiple Profile Support**: Configure different AWS accounts and roles
 - **Hardware Security**: Leverages Apple's Secure Enclave for cryptographic operations
 - **Touch ID Integration**: Biometric authentication for credential access
@@ -136,8 +146,10 @@ Enclave key
 
 2. **Credential Fetching** (`awseal fetch-role-creds`):
    - AWS CLI calls awseal via `credential_process`
-   - awseal decrypts stored SSO credentials (requires Touch ID/Face ID)
-   - Fresh role credentials are minted and returned to AWS CLI
+   - awseal decrypts stored credentials (requires Touch ID/Face ID)
+   - Role credentials are fetched from AWS SSO OIDC API and returned to AWS CLI
+   - Role credentials are stored encrypted until they expire
+   - Refresh tokens are used to keep access tokens short-lived for OIDC
 
 3. **Security Guarantees**:
    - Credentials are never stored in plain text

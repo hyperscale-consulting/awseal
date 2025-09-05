@@ -237,17 +237,28 @@ func loadConfig() throws -> AWSEALConfig {
     return config
 }
 
+struct Creds: Codable {
+    var ssoCreds: SsoCreds
+    var roleCreds: RoleCreds?
+}
+
+struct RoleCreds: Codable {
+    var accessKeyId: String
+    var secretAccessKey: String
+    var sessionToken: String
+    var expiration: Date
+
+    var hasExpired: Bool {
+        let buffer: TimeInterval = 5 // seconds
+        return Date() > expiration.addingTimeInterval(-buffer)
+    }
+}
+
 struct SsoCreds: Codable {
     var clientId: String
     var clientSecret: String
     var accessToken: String?
     var refreshToken: String?
-    init(clientId: String, clientSecret: String, accessToken: String? = nil, refreshToken: String? = nil) {
-        self.clientId = clientId
-        self.clientSecret = clientSecret
-        self.accessToken = accessToken
-        self.refreshToken = refreshToken
-    }
 }
 
 func ssoLogin(
@@ -255,7 +266,7 @@ func ssoLogin(
     profile: String,
     ssoCreds: SsoCreds,
     ssoStartUrl: String
-) async throws {
+) async throws -> SsoCreds {
     let startDeviceAuthorizationInput = StartDeviceAuthorizationInput(
         clientId: ssoCreds.clientId, clientSecret: ssoCreds.clientSecret, startUrl: ssoStartUrl
     )
@@ -303,8 +314,7 @@ func ssoLogin(
                 if let refreshToken = tok.refreshToken {
                     updatedCreds.refreshToken = refreshToken
                 }
-                try saveSsoCreds(profile: profile, ssoCreds: updatedCreds)
-                return
+                return updatedCreds
             }
         } catch is AuthorizationPendingException, is SlowDownException {
             try await Task.sleep(nanoseconds: UInt64(interval) * 1_000_000_000)
@@ -316,19 +326,19 @@ func ssoLogin(
     throw AwsealError.generic("Device authorization timed out.")
 }
 
-func loadSsoCreds(profile: String) throws -> SsoCreds {
+func loadCreds(profile: String) throws -> Creds? {
     let homeDir = FileManager.default.homeDirectoryForCurrentUser
     let fileURL = homeDir.appendingPathComponent(".awseal/\(profile)")
 
     guard FileManager.default.fileExists(atPath: fileURL.path) else {
-        throw AwsealError.notLoggedIn
+        return nil
     }
 
     let data = try loadDecrypted(from: fileURL)
-    return try JSONDecoder().decode(SsoCreds.self, from: data)
+    return try JSONDecoder().decode(Creds.self, from: data)
 }
 
-func saveSsoCreds(profile: String, ssoCreds: SsoCreds) throws {
+func saveCreds(profile: String, creds: Creds) throws {
     let homeDir = FileManager.default.homeDirectoryForCurrentUser
     let dirURL = homeDir.appendingPathComponent(".awseal")
 
@@ -342,9 +352,10 @@ func saveSsoCreds(profile: String, ssoCreds: SsoCreds) throws {
 
     let fileURL = dirURL.appendingPathComponent(profile)
 
-    let data = try JSONEncoder().encode(ssoCreds)
+    let data = try JSONEncoder().encode(creds)
     try saveEncrypted(plaintext: data, to: fileURL)
 }
+
 
 func registerClient(oidc: SSOOIDCClient, profile: String) async throws -> SsoCreds {
     let input = RegisterClientInput(
@@ -365,12 +376,11 @@ func registerClient(oidc: SSOOIDCClient, profile: String) async throws -> SsoCre
         throw AwsealError.clientRegistration("no clientSecret returned")
     }
     let ssoCreds = SsoCreds(clientId: clientId, clientSecret: clientSecret)
-    try saveSsoCreds(profile: profile, ssoCreds: ssoCreds)
 
     return ssoCreds
 }
 
-func refreshAccessToken(profile: String, oidc: SSOOIDCClient, ssoCreds: SsoCreds) async throws -> SsoCreds {
+func refreshAccessToken(profile: String, oidc: SSOOIDCClient, ssoCreds: SsoCreds) async throws -> (String, String) {
     guard let refreshToken = ssoCreds.refreshToken else {
         throw AwsealError.notLoggedIn
     }
@@ -384,15 +394,14 @@ func refreshAccessToken(profile: String, oidc: SSOOIDCClient, ssoCreds: SsoCreds
         let tok = try await oidc.createToken(
             input: createTokenInput
         )
-        
+
         if let accessToken = tok.accessToken {
             var updatedCreds = ssoCreds
             updatedCreds.accessToken = accessToken
             if let refreshToken = tok.refreshToken {
                 updatedCreds.refreshToken = refreshToken
             }
-            try saveSsoCreds(profile: profile, ssoCreds: updatedCreds)
-            return updatedCreds
+            return (accessToken, refreshToken)
         }
         throw AwsealError.notLoggedIn
     } catch is ExpiredTokenException {
@@ -400,32 +409,67 @@ func refreshAccessToken(profile: String, oidc: SSOOIDCClient, ssoCreds: SsoCreds
     }
 }
 
-func getRoleCreds(sso: SSOClient, accessToken: String, accountId: String, roleName: String) async throws -> SSOClientTypes.RoleCredentials {
+func getRoleCreds(sso: SSOClient, accessToken: String, accountId: String, roleName: String) async throws -> RoleCreds {
     let input = GetRoleCredentialsInput(accessToken: accessToken, accountId: accountId, roleName: roleName)
     let response = try await sso.getRoleCredentials(input: input)
     guard let roleCreds = response.roleCredentials else {
         throw AwsealError.notLoggedIn
     }
-    return roleCreds
+
+    let expiration = Date(timeIntervalSince1970: TimeInterval(roleCreds.expiration / 1000))
+    return RoleCreds(
+        accessKeyId: roleCreds.accessKeyId!,
+        secretAccessKey: roleCreds.secretAccessKey!,
+        sessionToken: roleCreds.sessionToken!,
+        expiration: expiration
+    )
 }
 
-func fetchRoleCreds(profile: String, oidc: SSOOIDCClient, sso: SSOClient, region: String, accountId: String, roleName: String) async throws -> SSOClientTypes.RoleCredentials {
-    var ssoCreds: SsoCreds
-    ssoCreds = try loadSsoCreds(profile: profile)
+func fetchRoleCreds(
+    profile: String, oidc: SSOOIDCClient, sso: SSOClient, region: String, accountId: String, roleName: String
+) async throws -> RoleCreds {
+
+    guard var creds = try loadCreds(profile: profile) else {
+        throw AwsealError.notLoggedIn
+    }
     
-    guard let accessToken = ssoCreds.accessToken else {
+    if let roleCreds = creds.roleCreds {
+        if !roleCreds.hasExpired {
+            return roleCreds
+        }
+    }
+    // role creds not present or expired
+
+    guard let accessToken = creds.ssoCreds.accessToken else {
         throw AwsealError.notLoggedIn
     }
 
+    var roleCreds: RoleCreds
     do {
-        return try await getRoleCreds(sso: sso, accessToken: accessToken, accountId: accountId, roleName: roleName)
+        roleCreds = try await getRoleCreds(
+            sso: sso,
+            accessToken: accessToken,
+            accountId: accountId,
+            roleName: roleName
+        )
     } catch is UnauthorizedException {
-        ssoCreds = try await refreshAccessToken(profile: profile, oidc: oidc, ssoCreds: ssoCreds)
-        guard let accessToken = ssoCreds.accessToken else {
-            throw AwsealError.notLoggedIn
-        }
-        return try await getRoleCreds(sso: sso, accessToken: accessToken, accountId: accountId, roleName: roleName)
+        let (accessToken, refreshToken) = try await refreshAccessToken(
+            profile: profile,
+            oidc: oidc,
+            ssoCreds: creds.ssoCreds
+        )
+        creds.ssoCreds.accessToken = accessToken
+        creds.ssoCreds.refreshToken = refreshToken
+        roleCreds = try await getRoleCreds(
+            sso: sso,
+            accessToken: accessToken,
+            accountId: accountId,
+            roleName: roleName
+        )
     }
+    creds.roleCreds = roleCreds
+    try saveCreds(profile: profile, creds: creds)
+    return roleCreds
 }
 
 func formatExpiration(_ expiration: Int) -> String {
@@ -434,13 +478,13 @@ func formatExpiration(_ expiration: Int) -> String {
     return formatter.string(from: date)
 }
 
-func printRoleCredentials(creds: SSOClientTypes.RoleCredentials) {
+func printRoleCredentials(creds: RoleCreds) {
     struct RoleCredsOutput: Codable {
         let version: Int
-        let accessKeyId: String?
-        let secretAccessKey: String?
-        let sessionToken: String?
-        let expiration: String?
+        let accessKeyId: String
+        let secretAccessKey: String
+        let sessionToken: String
+        let expiration: String
 
         enum CodingKeys: String, CodingKey {
             case version = "Version"
@@ -456,7 +500,7 @@ func printRoleCredentials(creds: SSOClientTypes.RoleCredentials) {
         accessKeyId: creds.accessKeyId,
         secretAccessKey: creds.secretAccessKey,
         sessionToken: creds.sessionToken,
-        expiration: formatExpiration(creds.expiration)
+        expiration: ISO8601DateFormatter().string(from: creds.expiration)
     )
 
     let encoder = JSONEncoder()
@@ -493,13 +537,22 @@ extension Awseal {
             let config = try loadConfig()
             let profileConfig = try config.profile(named: options.profile)
             let oidc = try SSOOIDCClient(region: profileConfig.ssoRegion)
-            let ssoCreds: SsoCreds
-            do {
-                ssoCreds = try loadSsoCreds(profile: options.profile)
-            } catch {
-                ssoCreds = try await registerClient(oidc: oidc, profile: options.profile)
+            var creds: Creds
+            if let existing = try loadCreds(profile: options.profile) {
+                creds = existing
+            } else {
+                let ssoCreds = try await registerClient(oidc: oidc, profile: options.profile)
+                creds = Creds(ssoCreds: ssoCreds)
             }
-            try await ssoLogin(oidc: oidc, profile: options.profile, ssoCreds: ssoCreds, ssoStartUrl: profileConfig.ssoStartUrl)
+            
+            let ssoCreds = try await ssoLogin(
+                oidc: oidc,
+                profile: options.profile,
+                ssoCreds: creds.ssoCreds,
+                ssoStartUrl: profileConfig.ssoStartUrl
+            )
+            creds.ssoCreds = ssoCreds
+            try saveCreds(profile: options.profile, creds: creds)
         }
     }
 
