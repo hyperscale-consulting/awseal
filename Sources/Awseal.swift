@@ -191,7 +191,7 @@ func loadDecrypted(from: URL) throws -> Data {
         throw AwsealError.generic("Envelope key ID (\(envelope.keyId)) doesn't match requested key (\(md.id)). \(recoveryInstructions)")
     }
 
-    let priv = try EnclaveKeyManager.openPrivateKey(md, reason: "decrypt AWS SSO credentials")
+    let priv = try EnclaveKeyManager.openPrivateKey(md, reason: "decrypt AWS credentials")
 
     var hpke = try HPKE.Recipient(
         privateKey: priv,
@@ -356,7 +356,6 @@ func saveCreds(profile: String, creds: Creds) throws {
     try saveEncrypted(plaintext: data, to: fileURL)
 }
 
-
 func registerClient(oidc: SSOOIDCClient, profile: String) async throws -> SsoCreds {
     let input = RegisterClientInput(
         clientName: "awseal-\(profile)",
@@ -515,7 +514,7 @@ func printRoleCredentials(creds: RoleCreds) {
 @main
 struct Awseal: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "An AWS CLI credential_process using AWS SSO to mint credentials while storing SSO secrets under a Secure Enclave key.",
+        abstract: "An AWS CLI credential_process using AWS SSO to mint credentials while storing secrets under a Secure Enclave key.",
         subcommands: [Login.self, FetchRoleCreds.self]
     )
 }
@@ -544,13 +543,25 @@ extension Awseal {
                 let ssoCreds = try await registerClient(oidc: oidc, profile: options.profile)
                 creds = Creds(ssoCreds: ssoCreds)
             }
-            
-            let ssoCreds = try await ssoLogin(
-                oidc: oidc,
-                profile: options.profile,
-                ssoCreds: creds.ssoCreds,
-                ssoStartUrl: profileConfig.ssoStartUrl
-            )
+
+            var ssoCreds: SsoCreds
+            do {
+                ssoCreds = try await ssoLogin(
+                    oidc: oidc,
+                    profile: options.profile,
+                    ssoCreds: creds.ssoCreds,
+                    ssoStartUrl: profileConfig.ssoStartUrl
+                )
+            } catch is InvalidClientException, is UnauthorizedException {
+                ssoCreds = try await registerClient(oidc: oidc, profile: options.profile)
+                creds = Creds(ssoCreds: ssoCreds)
+                ssoCreds = try await ssoLogin(
+                    oidc: oidc,
+                    profile: options.profile,
+                    ssoCreds: creds.ssoCreds,
+                    ssoStartUrl: profileConfig.ssoStartUrl
+                )
+            }
             creds.ssoCreds = ssoCreds
             try saveCreds(profile: options.profile, creds: creds)
         }
