@@ -241,10 +241,12 @@ struct SsoCreds: Codable {
     var clientId: String
     var clientSecret: String
     var accessToken: String?
-    init(clientId: String, clientSecret: String, accessToken: String? = nil) {
+    var refreshToken: String?
+    init(clientId: String, clientSecret: String, accessToken: String? = nil, refreshToken: String? = nil) {
         self.clientId = clientId
         self.clientSecret = clientSecret
         self.accessToken = accessToken
+        self.refreshToken = refreshToken
     }
 }
 
@@ -298,6 +300,9 @@ func ssoLogin(
             if let accessToken = tok.accessToken {
                 var updatedCreds = ssoCreds
                 updatedCreds.accessToken = accessToken
+                if let refreshToken = tok.refreshToken {
+                    updatedCreds.refreshToken = refreshToken
+                }
                 try saveSsoCreds(profile: profile, ssoCreds: updatedCreds)
                 return
             }
@@ -342,7 +347,15 @@ func saveSsoCreds(profile: String, ssoCreds: SsoCreds) throws {
 }
 
 func registerClient(oidc: SSOOIDCClient, profile: String) async throws -> SsoCreds {
-    let input = RegisterClientInput(clientName: "awseal-\(profile)", clientType: "public")
+    let input = RegisterClientInput(
+        clientName: "awseal-\(profile)",
+        clientType: "public",
+        grantTypes: [
+            "urn:ietf:params:oauth:grant-type:device_code",
+            "refresh_token",
+        ],
+        scopes: ["sso:account:access"]
+    )
     let resp = try await oidc.registerClient(input: input)
 
     guard let clientId = resp.clientId else {
@@ -357,6 +370,45 @@ func registerClient(oidc: SSOOIDCClient, profile: String) async throws -> SsoCre
     return ssoCreds
 }
 
+func refreshAccessToken(profile: String, oidc: SSOOIDCClient, ssoCreds: SsoCreds) async throws -> SsoCreds {
+    guard let refreshToken = ssoCreds.refreshToken else {
+        throw AwsealError.notLoggedIn
+    }
+    let createTokenInput = CreateTokenInput(
+        clientId: ssoCreds.clientId,
+        clientSecret: ssoCreds.clientSecret,
+        grantType: "refresh_token",
+        refreshToken: refreshToken
+    )
+    do {
+        let tok = try await oidc.createToken(
+            input: createTokenInput
+        )
+        
+        if let accessToken = tok.accessToken {
+            var updatedCreds = ssoCreds
+            updatedCreds.accessToken = accessToken
+            if let refreshToken = tok.refreshToken {
+                updatedCreds.refreshToken = refreshToken
+            }
+            try saveSsoCreds(profile: profile, ssoCreds: updatedCreds)
+            return updatedCreds
+        }
+        throw AwsealError.notLoggedIn
+    } catch is ExpiredTokenException {
+        throw AwsealError.notLoggedIn
+    }
+}
+
+func getRoleCreds(sso: SSOClient, accessToken: String, accountId: String, roleName: String) async throws -> SSOClientTypes.RoleCredentials {
+    let input = GetRoleCredentialsInput(accessToken: accessToken, accountId: accountId, roleName: roleName)
+    let response = try await sso.getRoleCredentials(input: input)
+    guard let roleCreds = response.roleCredentials else {
+        throw AwsealError.notLoggedIn
+    }
+    return roleCreds
+}
+
 func fetchRoleCreds(profile: String, oidc: SSOOIDCClient, sso: SSOClient, region: String, accountId: String, roleName: String) async throws -> SSOClientTypes.RoleCredentials {
     var ssoCreds: SsoCreds
     ssoCreds = try loadSsoCreds(profile: profile)
@@ -365,15 +417,14 @@ func fetchRoleCreds(profile: String, oidc: SSOOIDCClient, sso: SSOClient, region
         throw AwsealError.notLoggedIn
     }
 
-    let input = GetRoleCredentialsInput(accessToken: accessToken, accountId: accountId, roleName: roleName)
     do {
-        let response = try await sso.getRoleCredentials(input: input)
-        guard let roleCreds = response.roleCredentials else {
+        return try await getRoleCreds(sso: sso, accessToken: accessToken, accountId: accountId, roleName: roleName)
+    } catch is UnauthorizedException {
+        ssoCreds = try await refreshAccessToken(profile: profile, oidc: oidc, ssoCreds: ssoCreds)
+        guard let accessToken = ssoCreds.accessToken else {
             throw AwsealError.notLoggedIn
         }
-        return roleCreds
-    } catch is UnauthorizedException {
-        throw AwsealError.notLoggedIn
+        return try await getRoleCreds(sso: sso, accessToken: accessToken, accountId: accountId, roleName: roleName)
     }
 }
 
