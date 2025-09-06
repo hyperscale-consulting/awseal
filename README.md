@@ -177,7 +177,7 @@ can verify the built artifact with:
 ```bash
 slsa-verifier verify-artifact awseal-v${VERSION}.tar.gz \
   --provenance-path awseal-v${VERSION}.tar.gz.intoto.jsonl \
-  --source-uri github.com/andycaine/awseal \
+  --source-uri github.com/hyperscale-consulting/awseal \
   --source-tag v${VERSION}
 ```
 
