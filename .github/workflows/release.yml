@@ -5,18 +5,19 @@ on:
     tags:
       - "v*.*.*"
 
-permissions:
-  id-token: write
-  contents: write
+permissions: read-all
 
 jobs:
-  release:
+  build:
+    outputs:
+      hashes: ${{ steps.hash.outputs.hashes }}
     runs-on: macos-latest
 
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - run: sudo xcrun xcode-select -s /Applications/Xcode_16.4.app
-      - run: |
+      - name: Build artifacts
+        run: |
           swift --version
           swift build -c release --arch arm64
           swift build -c release --arch x86_64
@@ -26,8 +27,42 @@ jobs:
             .build/x86_64-apple-macosx/release/awseal
           cd .build/universal/release
           tar -czf awseal-${GITHUB_REF_NAME}.tar.gz awseal
+      - name: Generate hashes
+        shell: bash
+        id: hash
+        run: |
+          echo "hashes=$(sha256sum .build/universal/release/awseal-${GITHUB_REF_NAME}.tar.gz | base64 -w0)" >> "$GITHUB_OUTPUT"
+      - name: Upload artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: awseal-${{ github.ref_name }}.tar.gz
+          path: .build/universal/release/awseal-${{ github.ref_name }}.tar.gz
+          if-no-files-found: error
+          retention-days: 5
+
+  provenance:
+    needs: [build]
+    permissions:
+      actions: read
+      id-token: write
+      contents: write
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
+    with:
+      base64-subjects: "${{ needs.build.outputs.hashes }}"
+      upload-assets: true
+
+  release:
+    needs: [build, provenance]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@c850b930e6ba138125429b7e5c93fc707a7f8427 # v4.1.4
+        with:
+          name: awseal-${{ github.ref_name }}.tar.gz
       - name: Create github release
         uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
         with:
           files: |
-            .build/universal/release/awseal-${{ github.ref_name }}.tar.gz
+            awseal-${{ github.ref_name }}.tar.gz
