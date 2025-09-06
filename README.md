@@ -190,17 +190,10 @@ the checksum in
 This project is licensed under the MIT License - see the [LICENSE](LICENSE)
 file for details.
 
-## 🙏 Acknowledgments
+## Security
 
-- Inspired by [Secretive](https://github.com/maxgoedjen/secretive) for SSH key security
-- Built on Apple's Secure Enclave and Local Authentication frameworks
-- Uses AWS SSO OIDC for secure credential management
-
-## 🔗 Related Projects
-
-- [Secretive](https://github.com/maxgoedjen/secretive) - Secure SSH key
-management using Secure Enclave
-- [AWS CLI](https://aws.amazon.com/cli/) - Command line interface for AWS
-- [AWS SSO](https://aws.amazon.com/single-sign-on/) - AWS Single Sign-On service
+Our security policy is detailed in [SECURITY.md](SECURITY.md). To report
+security issues, please use [GitHub's private reporting
+feature.](https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing-information-about-vulnerabilities/privately-reporting-a-security-vulnerability#privately-reporting-a-security-vulnerability)
 
 ---
