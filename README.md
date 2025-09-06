@@ -156,6 +156,35 @@ Enclave key
    - Access requires physical user presence
    - Malicious code cannot bypass authentication
 
+## ✅ Verifying a Build
+
+`awseal` has access to your AWS credentials, so you should verify that you're
+installing what you think you are.
+
+The code is easy to audit; it's relatively straightforward and is all in one
+file: [Sources/Awseal.swift](Sources/Awseal/Awseal.swift).
+
+To verify that the binary release was built from the source code you have
+audited, you can use the [slsa-verifier
+tool](https://github.com/slsa-framework/slsa-verifier). `awseal` uses
+[slsa-github-generator](https://github.com/slsa-framework/slsa-github-generator/tree/main)
+for including provenance in releases. After
+[installing](https://github.com/slsa-framework/slsa-verifier#installation)
+`slsa-verifier`, and fetching the binary and provenance file for the [latest
+release](https://github.com/hyperscale-consulting/awseal/releases/latest), you
+can verify the built artifact with:
+
+```bash
+slsa-verifier verify-artifact awseal-v${VERSION}.tar.gz \
+  --provenance-path awseal-v${VERSION}.tar.gz.intoto.jsonl \
+  --source-uri github.com/andycaine/awseal \
+  --source-tag v${VERSION}
+```
+
+If you're installing through Homebrew, you can compare the sha256 checksum with
+the checksum in
+[formula](https://github.com/hyperscale-consulting/homebrew-hyperscale/blob/main/Formula/awseal.rb)
+
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE)
