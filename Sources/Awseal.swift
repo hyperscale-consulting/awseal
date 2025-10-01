@@ -249,7 +249,7 @@ struct RoleCreds: Codable {
     var expiration: Date
 
     var hasExpired: Bool {
-        let buffer: TimeInterval = 5 // seconds
+        let buffer: TimeInterval = 15 * 60
         return Date() > expiration.addingTimeInterval(-buffer)
     }
 }
