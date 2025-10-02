@@ -101,7 +101,7 @@ it with in `~/.aws/config`:
 [default]
 credential_process = awseal fetch-role-creds
 
-[my-profile]
+[profile my-profile]
 credential_process = awseal fetch-role-creds --profile my-profile
 ```
 
